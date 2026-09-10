@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -42,7 +43,10 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private lateinit var wakeWordEngine: WakeWordEngine
 
     private val serviceScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        CoroutineScope(
+            SupervisorJob() +
+                    Dispatchers.Main.immediate
+        )
 
     private val handler =
         Handler(Looper.getMainLooper())
@@ -50,40 +54,58 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private var commandListening = false
 
     override fun onCreate() {
+
         super.onCreate()
 
-        tts = TextToSpeech(this, this)
+        tts =
+            TextToSpeech(
+                this,
+                this
+            )
 
         createChannel()
 
         val notification =
-            Notification.Builder(this, "jarvis_voice")
+            Notification.Builder(
+                this,
+                "jarvis_voice"
+            )
                 .setContentTitle("JARVIS")
-                .setContentText("Diga \"Hey Jarvis\" para ativar")
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentText(
+                    "Diga \"Hey Jarvis\" para ativar"
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_btn_speak_now
+                )
                 .setOngoing(true)
                 .build()
 
-        startForeground(42, notification)
+        startForeground(
+            42,
+            notification
+        )
 
         setupWakeWord()
     }
 
     private fun setupWakeWord() {
 
-        val models = listOf(
-            WakeWordModel(
-                name = "Hey Jarvis",
-                modelPath = "hey_jarvis_v0.1.onnx",
-                threshold = 0.08f
+        val models =
+            listOf(
+                WakeWordModel(
+                    name = "Hey Jarvis",
+                    modelPath =
+                        "hey_jarvis_v0.1.onnx",
+                    threshold = 0.08f
+                )
             )
-        )
 
         wakeWordEngine =
             WakeWordEngine(
                 context = this,
                 models = models,
-                detectionMode = DetectionMode.SINGLE_BEST,
+                detectionMode =
+                    DetectionMode.SINGLE_BEST,
                 detectionCooldownMs = 2000L
             )
 
@@ -115,9 +137,13 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun startListeningForCommand() {
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        if (
+            !SpeechRecognizer
+                .isRecognitionAvailable(this)
+        ) {
 
             commandListening = false
+
             restartWakeWord()
 
             return
@@ -126,9 +152,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         recognizer?.destroy()
 
         recognizer =
-            SpeechRecognizer.createSpeechRecognizer(this)
+            SpeechRecognizer
+                .createSpeechRecognizer(this)
 
         recognizer?.setRecognitionListener(
+
             object : RecognitionListener {
 
                 override fun onReadyForSpeech(
@@ -153,7 +181,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onPartialResults(
-                    partialResults: android.os.Bundle?
+                    partialResults:
+                    android.os.Bundle?
                 ) {
                 }
 
@@ -168,6 +197,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 ) {
 
                     recognizer?.destroy()
+
                     recognizer = null
 
                     commandListening = false
@@ -182,19 +212,23 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     val text =
                         results
                             ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
+                                SpeechRecognizer
+                                    .RESULTS_RECOGNITION
                             )
                             ?.firstOrNull()
 
-                    if (!text.isNullOrBlank()) {
+                    if (
+                        !text.isNullOrBlank()
+                    ) {
 
                         val response =
-                            executeCommand(text)
+                            simpleCommand(text)
 
                         speak(response)
                     }
 
                     recognizer?.destroy()
+
                     recognizer = null
 
                     commandListening = false
@@ -211,21 +245,26 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         val intent =
             Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                RecognizerIntent
+                    .ACTION_RECOGNIZE_SPEECH
             ).apply {
 
                 putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    RecognizerIntent
+                        .EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent
+                        .LANGUAGE_MODEL_FREE_FORM
                 )
 
                 putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE,
+                    RecognizerIntent
+                        .EXTRA_LANGUAGE,
                     "pt-BR"
                 )
 
                 putExtra(
-                    RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                    RecognizerIntent
+                        .EXTRA_PARTIAL_RESULTS,
                     false
                 )
             }
@@ -237,15 +276,19 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         handler.postDelayed(
             {
+
                 if (!commandListening) {
                     wakeWordEngine.start()
                 }
+
             },
             1000L
         )
     }
 
-    private fun speak(text: String) {
+    private fun speak(
+        text: String
+    ) {
 
         if (::tts.isInitialized) {
 
@@ -258,149 +301,100 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun executeCommand(
+    private fun simpleCommand(
         text: String
     ): String {
 
-        val command =
-            normalizeText(text)
+        val l =
+            text.lowercase(
+                Locale("pt", "BR")
+            )
 
         return when {
 
-            command.contains("que horas") ||
-            command.contains("qual a hora") ||
-            command.contains("horas sao") ||
-            command.contains("horas são") -> {
-
+            "que horas" in l ||
+            "qual a hora" in l ->
                 "Agora são " +
                         SimpleDateFormat(
                             "HH:mm",
                             Locale("pt", "BR")
                         ).format(Date())
-            }
 
-            command.contains("quem e voce") ||
-            command.contains("quem voce e") ||
-            command.contains("seu nome") -> {
-
+            "quem é você" in l ||
+            "quem voce é" in l ||
+            "seu nome" in l ->
                 "Sou JARVIS."
-            }
 
-            command == "oi" ||
-            command == "ola" ||
-            command.startsWith("ola ") ||
-            command.startsWith("oi ") -> {
-
+            "olá" in l ||
+            "ola" in l ||
+            "oi" in l ->
                 "Olá. Como posso ajudá-lo?"
+
+            "youtube" in l -> {
+
+                openApp(
+                    "com.google.android.youtube"
+                )
+
+                "Abrindo o YouTube."
             }
 
-            command.contains("youtube") -> {
+            "spotify" in l -> {
 
-                if (openApp(
-                        "com.google.android.youtube"
-                    )
-                ) {
-                    "Abrindo o YouTube."
-                } else {
-                    "O YouTube não está disponível."
-                }
+                openSpotify()
+
+                "Abrindo o Spotify."
             }
 
-            command.contains("spotify") -> {
+            "whatsapp" in l -> {
 
-                if (openApp(
-                        "com.spotify.music"
-                    )
-                ) {
-                    "Abrindo o Spotify."
-                } else {
-                    "Não encontrei o Spotify instalado."
-                }
+                openWhatsApp()
+
+                "Abrindo o WhatsApp."
             }
 
-            command.contains("whatsapp") -> {
-
-                if (
-                    openApp("com.whatsapp") ||
-                    openApp("com.whatsapp.w4b")
-                ) {
-                    "Abrindo o WhatsApp."
-                } else {
-                    "Não encontrei o WhatsApp instalado."
-                }
-            }
-
-            command.contains("configuracao") -> {
-
-                openSettings()
-
-                "Abrindo as configurações."
-            }
-
-            command.contains("navegador") ||
-            command.contains("internet") ||
-            command.contains("chrome") -> {
-
-                openBrowser()
-
-                "Abrindo o navegador."
-            }
-
-            command.contains("telefone") ||
-            command.contains("ligacao") ||
-            command.contains("ligaçoes") ||
-            command.contains("ligacoes") -> {
-
-                openPhone()
-
-                "Abrindo o telefone."
-            }
-
-            command.contains("camera") -> {
+            "câmera" in l ||
+            "camera" in l -> {
 
                 openCamera()
 
                 "Abrindo a câmera."
             }
 
-            command.contains("lanterna") &&
-            (
-                command.contains("ligar") ||
-                command.contains("liga") ||
-                command.contains("acender") ||
-                command.contains("acenda") ||
-                command.contains("ativa") ||
-                command.contains("ativar")
-            ) -> {
+            "telefone" in l ||
+            "ligação" in l ||
+            "ligacao" in l -> {
 
-                if (setFlashlight(true)) {
-                    "Lanterna ligada."
-                } else {
-                    "Não consegui controlar a lanterna."
-                }
+                openPhone()
+
+                "Abrindo o telefone."
             }
 
-            command.contains("lanterna") &&
-            (
-                command.contains("desligar") ||
-                command.contains("desliga") ||
-                command.contains("apagar") ||
-                command.contains("apaga") ||
-                command.contains("desativa") ||
-                command.contains("desativar")
-            ) -> {
+            "ligue a lanterna" in l ||
+            "liga a lanterna" in l ||
+            "acenda a lanterna" in l ||
+            "acender a lanterna" in l ||
+            "ligar a lanterna" in l -> {
 
-                if (setFlashlight(false)) {
-                    "Lanterna desligada."
-                } else {
-                    "Não consegui controlar a lanterna."
-                }
+                setFlashlight(true)
+
+                "Ligando a lanterna."
             }
 
-            command.contains("aumentar volume") ||
-            command.contains("aumente o volume") ||
-            command.contains("aumenta o volume") ||
-            command.contains("mais volume") -> {
+            "desligue a lanterna" in l ||
+            "desliga a lanterna" in l ||
+            "apague a lanterna" in l ||
+            "apagar a lanterna" in l ||
+            "desligar a lanterna" in l -> {
+
+                setFlashlight(false)
+
+                "Desligando a lanterna."
+            }
+
+            "aumente o volume" in l ||
+            "aumentar o volume" in l ||
+            "aumenta o volume" in l -> {
 
                 changeVolume(
                     AudioManager.ADJUST_RAISE
@@ -409,10 +403,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Aumentando o volume."
             }
 
-            command.contains("diminuir volume") ||
-            command.contains("diminua o volume") ||
-            command.contains("diminui o volume") ||
-            command.contains("menos volume") -> {
+            "diminua o volume" in l ||
+            "diminuir o volume" in l ||
+            "diminui o volume" in l -> {
 
                 changeVolume(
                     AudioManager.ADJUST_LOWER
@@ -421,117 +414,174 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Diminuindo o volume."
             }
 
-            command.contains("silenciar volume") ||
-            command.contains("silencie o volume") ||
-            command.contains("volume mudo") ||
-            command == "mudo" -> {
+            "silencie" in l ||
+            "silenciar" in l ||
+            "mudo" in l -> {
 
                 muteVolume()
 
                 "Volume silenciado."
             }
 
-            command.contains("play store") ||
-            command.contains("loja de aplicativos") -> {
+            "configurações" in l ||
+            "configuracoes" in l ||
+            "configuração" in l ||
+            "configuracao" in l -> {
+
+                openSettings()
+
+                "Abrindo as configurações."
+            }
+
+            "navegador" in l ||
+            "internet" in l ||
+            "chrome" in l -> {
+
+                openBrowser()
+
+                "Abrindo o navegador."
+            }
+
+            "play store" in l -> {
 
                 openPlayStore()
 
                 "Abrindo a Play Store."
             }
 
-            command.contains("alarme") ||
-            command.contains("despertador") ||
-            command.contains("relogio") -> {
+            "alarme" in l ||
+            "despertador" in l ||
+            "relógio" in l ||
+            "relogio" in l -> {
 
                 openAlarm()
 
                 "Abrindo o relógio."
             }
 
-            command.contains("tela inicial") ||
-            command.contains("ir para inicio") ||
-            command.contains("voltar para inicio") -> {
+            "tela inicial" in l -> {
 
                 goHome()
 
                 "Voltando para a tela inicial."
             }
 
-            command.startsWith("pesquisar ") ||
-            command.startsWith("pesquise ") ||
-            command.startsWith("procure ") ||
-            command.startsWith("buscar ") -> {
+            "bateria" in l -> {
 
-                val search =
-                    command
-                        .replaceFirst(
-                            Regex(
-                                "^(pesquisar|pesquise|procure|buscar)\\s+"
-                            ),
-                            ""
-                        )
-                        .trim()
+                val bm =
+                    getSystemService(
+                        BATTERY_SERVICE
+                    ) as android.os.BatteryManager
 
-                if (search.isNotBlank()) {
+                val battery =
+                    bm.getIntProperty(
+                        android.os.BatteryManager
+                            .BATTERY_PROPERTY_CAPACITY
+                    )
 
-                    searchGoogle(search)
-
-                    "Pesquisando por $search."
-                } else {
-                    "O que você quer pesquisar?"
-                }
+                "A bateria está em " +
+                        "$battery por cento."
             }
 
-            else -> {
+            "pesquisar" in l ||
+            "pesquise" in l ||
+            "procure no google" in l -> {
 
-                "Não entendi o comando."
+                searchGoogle(
+                    extractSearchText(l)
+                )
+
+                "Pesquisando no Google."
             }
+
+            else ->
+                "Comando recebido: $text"
         }
-    }
-
-    private fun normalizeText(
-        text: String
-    ): String {
-
-        return text
-            .lowercase(Locale("pt", "BR"))
-            .replace("á", "a")
-            .replace("à", "a")
-            .replace("ã", "a")
-            .replace("â", "a")
-            .replace("é", "e")
-            .replace("ê", "e")
-            .replace("í", "i")
-            .replace("ó", "o")
-            .replace("ô", "o")
-            .replace("õ", "o")
-            .replace("ú", "u")
-            .replace("ç", "c")
-            .trim()
     }
 
     private fun openApp(
         packageName: String
-    ): Boolean {
+    ) {
 
         val intent =
-            packageManager.getLaunchIntentForPackage(
-                packageName
-            )
+            packageManager
+                .getLaunchIntentForPackage(
+                    packageName
+                )
 
-        return if (intent != null) {
+        if (intent != null) {
 
             intent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
             )
 
             startActivity(intent)
-
-            true
-
-        } else {
-            false
         }
+    }
+
+    private fun openSpotify() {
+
+        val spotify =
+            packageManager
+                .getLaunchIntentForPackage(
+                    "com.spotify.music"
+                )
+
+        if (spotify != null) {
+
+            spotify.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            startActivity(spotify)
+
+            return
+        }
+
+        openBrowserUrl(
+            "https://open.spotify.com/"
+        )
+    }
+
+    private fun openWhatsApp() {
+
+        val whatsapp =
+            packageManager
+                .getLaunchIntentForPackage(
+                    "com.whatsapp"
+                )
+
+        if (whatsapp != null) {
+
+            whatsapp.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            startActivity(whatsapp)
+
+            return
+        }
+
+        val business =
+            packageManager
+                .getLaunchIntentForPackage(
+                    "com.whatsapp.w4b"
+                )
+
+        if (business != null) {
+
+            business.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            startActivity(business)
+
+            return
+        }
+
+        openBrowserUrl(
+            "https://web.whatsapp.com/"
+        )
     }
 
     private fun openPhone() {
@@ -550,6 +600,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 packageManager
             ) != null
         ) {
+
             startActivity(intent)
         }
     }
@@ -558,7 +609,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         val intent =
             Intent(
-                android.provider.MediaStore.ACTION_IMAGE_CAPTURE
+                android.provider
+                    .MediaStore
+                    .ACTION_IMAGE_CAPTURE
             )
 
         intent.addFlags(
@@ -570,47 +623,72 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 packageManager
             ) != null
         ) {
+
             startActivity(intent)
         }
     }
 
     private fun setFlashlight(
         enabled: Boolean
-    ): Boolean {
+    ) {
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return false
+        if (
+            Build.VERSION.SDK_INT <
+            Build.VERSION_CODES.M
+        ) {
+            return
         }
 
-        return try {
+        if (
+            checkSelfPermission(
+                android.Manifest.permission.CAMERA
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+
+            return
+        }
+
+        try {
 
             val cameraManager =
                 getSystemService(
                     CAMERA_SERVICE
                 ) as CameraManager
 
-            val cameraId =
-                cameraManager.cameraIdList.firstOrNull { id ->
+            var cameraId: String? = null
 
-                    val characteristics =
-                        cameraManager.getCameraCharacteristics(
-                            id
-                        )
+            for (
+                id in cameraManager.cameraIdList
+            ) {
 
-                    val hasFlash =
-                        characteristics.get(
-                            CameraCharacteristics.FLASH_INFO_AVAILABLE
-                        ) == true
+                val characteristics =
+                    cameraManager
+                        .getCameraCharacteristics(id)
 
-                    val facing =
-                        characteristics.get(
-                            CameraCharacteristics.LENS_FACING
-                        )
+                val flashAvailable =
+                    characteristics.get(
+                        CameraCharacteristics
+                            .FLASH_INFO_AVAILABLE
+                    ) == true
 
-                    hasFlash &&
-                            facing ==
-                            CameraCharacteristics.LENS_FACING_BACK
+                val facing =
+                    characteristics.get(
+                        CameraCharacteristics
+                            .LENS_FACING
+                    )
+
+                if (
+                    flashAvailable &&
+                    facing ==
+                    CameraCharacteristics
+                        .LENS_FACING_BACK
+                ) {
+
+                    cameraId = id
+
+                    break
                 }
+            }
 
             if (cameraId != null) {
 
@@ -618,15 +696,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     cameraId,
                     enabled
                 )
-
-                true
-
-            } else {
-                false
             }
 
         } catch (_: Exception) {
-            false
         }
     }
 
@@ -664,20 +736,28 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         query: String
     ) {
 
-        val intent =
-            Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(
-                    "https://www.google.com/search?q=" +
-                            Uri.encode(query)
-                )
-            )
+        val finalQuery =
+            if (query.isBlank()) {
+                "Google"
+            } else {
+                query
+            }
 
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK
+        openBrowserUrl(
+            "https://www.google.com/search?q=" +
+                    Uri.encode(finalQuery)
         )
+    }
 
-        startActivity(intent)
+    private fun extractSearchText(
+        text: String
+    ): String {
+
+        return text
+            .replace("pesquise", "")
+            .replace("pesquisar", "")
+            .replace("procure no google", "")
+            .trim()
     }
 
     private fun openPlayStore() {
@@ -690,29 +770,15 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 )
             )
 
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK
-        )
-
         try {
 
             startActivity(intent)
 
         } catch (_: Exception) {
 
-            val browserIntent =
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse(
-                        "https://play.google.com/store"
-                    )
-                )
-
-            browserIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
+            openBrowserUrl(
+                "https://play.google.com/store"
             )
-
-            startActivity(browserIntent)
         }
     }
 
@@ -732,6 +798,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 packageManager
             ) != null
         ) {
+
             startActivity(intent)
         }
     }
@@ -771,19 +838,33 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun openBrowser() {
 
+        openBrowserUrl(
+            "https://www.google.com"
+        )
+    }
+
+    private fun openBrowserUrl(
+        url: String
+    ) {
+
         val intent =
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse(
-                    "https://www.google.com"
-                )
+                Uri.parse(url)
             )
 
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
         )
 
-        startActivity(intent)
+        if (
+            intent.resolveActivity(
+                packageManager
+            ) != null
+        ) {
+
+            startActivity(intent)
+        }
     }
 
     private fun createChannel() {
@@ -794,12 +875,15 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 NotificationChannel(
                     "jarvis_voice",
                     "JARVIS Voz",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager
+                        .IMPORTANCE_LOW
                 )
 
             getSystemService(
                 NotificationManager::class.java
-            ).createNotificationChannel(channel)
+            ).createNotificationChannel(
+                channel
+            )
         }
     }
 
@@ -814,7 +898,10 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         status: Int
     ) {
 
-        if (status == TextToSpeech.SUCCESS) {
+        if (
+            status ==
+            TextToSpeech.SUCCESS
+        ) {
 
             tts.language =
                 Locale("pt", "BR")
@@ -828,11 +915,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         recognizer?.destroy()
         recognizer = null
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            setFlashlight(false)
-        }
-
-        if (::wakeWordEngine.isInitialized) {
+        if (
+            ::wakeWordEngine.isInitialized
+        ) {
             wakeWordEngine.release()
         }
 
