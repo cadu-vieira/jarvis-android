@@ -24,9 +24,10 @@ defaultConfig {
         versionName = "1.0"
     }
 }
-
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("xyz.rementia:openwakeword:0.1.5")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
+    
