@@ -114,7 +114,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
 
             commandListening = false
-
             restartWakeWord()
 
             return
@@ -234,11 +233,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         handler.postDelayed(
             {
-
                 if (!commandListening) {
                     wakeWordEngine.start()
                 }
-
             },
             1000L
         )
@@ -285,9 +282,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
             "youtube" in l -> {
 
-                openApp(
-                    "com.google.android.youtube"
-                )
+                openApp("com.google.android.youtube")
 
                 "Abrindo o YouTube."
             }
@@ -306,6 +301,37 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 openBrowser()
 
                 "Abrindo o navegador."
+            }
+
+            "whatsapp" in l -> {
+
+                openApp("com.whatsapp")
+
+                "Abrindo o WhatsApp."
+            }
+
+            "spotify" in l -> {
+
+                openApp("com.spotify.music")
+
+                "Abrindo o Spotify."
+            }
+
+            "telefone" in l ||
+            "ligações" in l ||
+            "ligação" in l -> {
+
+                openApp("com.google.android.dialer")
+
+                "Abrindo o telefone."
+            }
+
+            "câmera" in l ||
+            "camera" in l -> {
+
+                openCamera()
+
+                "Abrindo a câmera."
             }
 
             else ->
@@ -332,12 +358,24 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun openSettings() {
+    private fun openCamera() {
 
         val intent =
             Intent(
-                Settings.ACTION_SETTINGS
+                android.provider.MediaStore.ACTION_IMAGE_CAPTURE
             )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        startActivity(intent)
+    }
+
+    private fun openSettings() {
+
+        val intent =
+            Intent(Settings.ACTION_SETTINGS)
 
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
@@ -351,9 +389,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         val intent =
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse(
-                    "https://www.google.com"
-                )
+                Uri.parse("https://www.google.com")
             )
 
         intent.addFlags(
