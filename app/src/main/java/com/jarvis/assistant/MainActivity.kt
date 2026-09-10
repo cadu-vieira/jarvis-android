@@ -246,6 +246,29 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     "Abrindo a câmera."
             }
 
+            // -------------------------------------------------
+            // LANterna DESLIGADA
+            // IMPORTANTE: fica ANTES dos comandos de ligar.
+            // -------------------------------------------------
+
+            "desligue a lanterna" in lower ||
+            "desliga a lanterna" in lower ||
+            "desligar a lanterna" in lower ||
+            "apague a lanterna" in lower ||
+            "apagar a lanterna" in lower ||
+            "desative a lanterna" in lower ||
+            "desativar a lanterna" in lower -> {
+
+                setFlashlight(false)
+
+                response =
+                    "Lanterna desligada."
+            }
+
+            // -------------------------------------------------
+            // LANterna LIGADA
+            // -------------------------------------------------
+
             "ligue a lanterna" in lower ||
             "liga a lanterna" in lower ||
             "acenda a lanterna" in lower ||
@@ -255,19 +278,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 setFlashlight(true)
 
                 response =
-                    "Ligando a lanterna."
-            }
-
-            "desligue a lanterna" in lower ||
-            "desliga a lanterna" in lower ||
-            "apague a lanterna" in lower ||
-            "apagar a lanterna" in lower ||
-            "desligar a lanterna" in lower -> {
-
-                setFlashlight(false)
-
-                response =
-                    "Desligando a lanterna."
+                    "Lanterna ligada."
             }
 
             "aumente o volume" in lower ||
