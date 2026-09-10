@@ -14,9 +14,9 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 
-import com.rementia.openwakeword.lib.DetectionMode
 import com.rementia.openwakeword.lib.WakeWordEngine
-import com.rementia.openwakeword.lib.WakeWordModel
+import com.rementia.openwakeword.lib.model.DetectionMode
+import com.rementia.openwakeword.lib.model.WakeWordModel
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,14 +31,15 @@ import java.util.Locale
 class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private var recognizer: SpeechRecognizer? = null
-    private lateinit var tts: TextToSpeech
 
+    private lateinit var tts: TextToSpeech
     private lateinit var wakeWordEngine: WakeWordEngine
 
     private val serviceScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler =
+        Handler(Looper.getMainLooper())
 
     private var commandListening = false
 
@@ -59,28 +60,26 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         startForeground(42, notification)
 
-        startWakeWord()
+        setupWakeWord()
     }
 
-    private fun startWakeWord() {
+    private fun setupWakeWord() {
 
-        try {
-            wakeWordEngine.release()
-        } catch (_: Exception) {
-        }
-
-        wakeWordEngine = WakeWordEngine(
-            context = this,
-            models = listOf(
-                WakeWordModel(
-                    name = "Hey Jarvis",
-                    modelPath = "hey_jarvis_v0.1.onnx",
-                    threshold = 0.08f
-                )
-            ),
-            detectionMode = DetectionMode.SINGLE_BEST,
-            detectionCooldownMs = 2000L
+        val models = listOf(
+            WakeWordModel(
+                name = "Hey Jarvis",
+                modelPath = "hey_jarvis_v0.1.onnx",
+                threshold = 0.08f
+            )
         )
+
+        wakeWordEngine =
+            WakeWordEngine(
+                context = this,
+                models = models,
+                detectionMode = DetectionMode.SINGLE_BEST,
+                detectionCooldownMs = 2000L
+            )
 
         serviceScope.launch {
 
@@ -100,7 +99,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     {
                         startListeningForCommand()
                     },
-                    1200
+                    1200L
                 )
             }
         }
@@ -111,8 +110,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private fun startListeningForCommand() {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+
             commandListening = false
+
             restartWakeWord()
+
             return
         }
 
@@ -124,16 +126,22 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         recognizer?.setRecognitionListener(
             object : RecognitionListener {
 
-                override fun onReadyForSpeech(params: android.os.Bundle?) {
+                override fun onReadyForSpeech(
+                    params: android.os.Bundle?
+                ) {
                 }
 
                 override fun onBeginningOfSpeech() {
                 }
 
-                override fun onRmsChanged(rmsdB: Float) {
+                override fun onRmsChanged(
+                    rmsdB: Float
+                ) {
                 }
 
-                override fun onBufferReceived(buffer: ByteArray?) {
+                override fun onBufferReceived(
+                    buffer: ByteArray?
+                ) {
                 }
 
                 override fun onEndOfSpeech() {
@@ -150,7 +158,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 ) {
                 }
 
-                override fun onError(error: Int) {
+                override fun onError(
+                    error: Int
+                ) {
 
                     recognizer?.destroy()
                     recognizer = null
@@ -188,7 +198,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                         {
                             restartWakeWord()
                         },
-                        1500
+                        1500L
                     )
                 }
             }
@@ -222,11 +232,13 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         handler.postDelayed(
             {
+
                 if (!commandListening) {
-                    startWakeWord()
+                    wakeWordEngine.start()
                 }
+
             },
-            1000
+            1000L
         )
     }
 
@@ -243,7 +255,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun simpleCommand(text: String): String {
+    private fun simpleCommand(
+        text: String
+    ): String {
 
         val l =
             text.lowercase(
@@ -292,11 +306,16 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
+
         return null
     }
 
-    override fun onInit(status: Int) {
+    override fun onInit(
+        status: Int
+    ) {
 
         if (status == TextToSpeech.SUCCESS) {
 
@@ -312,9 +331,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         recognizer?.destroy()
         recognizer = null
 
-        try {
+        if (::wakeWordEngine.isInitialized) {
             wakeWordEngine.release()
-        } catch (_: Exception) {
         }
 
         serviceScope.cancel()
