@@ -6,12 +6,15 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.AlarmClock
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -46,8 +49,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         Handler(Looper.getMainLooper())
 
     private var commandListening = false
-
-    private var flashLightOn = false
 
     override fun onCreate() {
         super.onCreate()
@@ -191,7 +192,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                         val response =
                             simpleCommand(text)
 
-                        speak(response)
+                        if (response.isNotBlank()) {
+                            speak(response)
+                        }
                     }
 
                     recognizer?.destroy()
@@ -237,9 +240,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         handler.postDelayed(
             {
+
                 if (!commandListening) {
                     wakeWordEngine.start()
                 }
+
             },
             1000L
         )
@@ -269,7 +274,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         return when {
 
-            "que horas" in l ->
+            "que horas" in l ||
+            "qual a hora" in l ->
                 "Agora são " +
                         SimpleDateFormat(
                             "HH:mm",
@@ -277,10 +283,12 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                         ).format(Date())
 
             "quem é você" in l ||
+            "quem voce é" in l ||
             "seu nome" in l ->
                 "Sou JARVIS."
 
             "olá" in l ||
+            "ola" in l ||
             "oi" in l ->
                 "Olá. Como posso ajudá-lo?"
 
@@ -289,22 +297,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 openAppByName("youtube")
 
                 "Abrindo o YouTube."
-            }
-
-            "configurações" in l ||
-            "configuração" in l -> {
-
-                openSettings()
-
-                "Abrindo as configurações."
-            }
-
-            "navegador" in l ||
-            "internet" in l -> {
-
-                openBrowser()
-
-                "Abrindo o navegador."
             }
 
             "spotify" in l -> {
@@ -321,9 +313,31 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Abrindo o WhatsApp."
             }
 
+            "configurações" in l ||
+            "configuração" in l ||
+            "configuracoes" in l ||
+            "configuracao" in l -> {
+
+                openSettings()
+
+                "Abrindo as configurações."
+            }
+
+            "navegador" in l ||
+            "internet" in l ||
+            "google chrome" in l ||
+            "chrome" in l -> {
+
+                openBrowser()
+
+                "Abrindo o navegador."
+            }
+
             "telefone" in l ||
             "ligações" in l ||
-            "ligação" in l -> {
+            "ligação" in l ||
+            "ligacoes" in l ||
+            "ligacao" in l -> {
 
                 openPhone()
 
@@ -341,7 +355,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             "ligue a lanterna" in l ||
             "liga a lanterna" in l ||
             "acenda a lanterna" in l ||
-            "acender a lanterna" in l -> {
+            "acender a lanterna" in l ||
+            "ligar a lanterna" in l -> {
 
                 setFlashlight(true)
 
@@ -351,11 +366,87 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             "desligue a lanterna" in l ||
             "desliga a lanterna" in l ||
             "apague a lanterna" in l ||
-            "apagar a lanterna" in l -> {
+            "apagar a lanterna" in l ||
+            "desligar a lanterna" in l -> {
 
                 setFlashlight(false)
 
                 "Desligando a lanterna."
+            }
+
+            "aumente o volume" in l ||
+            "aumentar o volume" in l ||
+            "aumenta o volume" in l ||
+            "mais volume" in l -> {
+
+                changeVolume(
+                    AudioManager.ADJUST_RAISE
+                )
+
+                "Aumentando o volume."
+            }
+
+            "diminua o volume" in l ||
+            "diminuir o volume" in l ||
+            "diminui o volume" in l ||
+            "menos volume" in l -> {
+
+                changeVolume(
+                    AudioManager.ADJUST_LOWER
+                )
+
+                "Diminuindo o volume."
+            }
+
+            "silencie o volume" in l ||
+            "silenciar o volume" in l ||
+            "mudo" in l ||
+            "modo silencioso" in l -> {
+
+                muteVolume()
+
+                "Volume silenciado."
+            }
+
+            "pesquise" in l ||
+            "pesquisar" in l ||
+            "procure no google" in l ||
+            "pesquisa no google" in l -> {
+
+                searchGoogle(
+                    extractSearchText(l)
+                )
+
+                "Pesquisando no Google."
+            }
+
+            "play store" in l ||
+            "loja de aplicativos" in l -> {
+
+                openPlayStore()
+
+                "Abrindo a Play Store."
+            }
+
+            "alarme" in l ||
+            "despertador" in l ||
+            "relógio" in l ||
+            "relogio" in l -> {
+
+                openAlarm()
+
+                "Abrindo o relógio."
+            }
+
+            "tela inicial" in l ||
+            "voltar para o início" in l ||
+            "voltar para o inicio" in l ||
+            "ir para o início" in l ||
+            "ir para o inicio" in l -> {
+
+                goHome()
+
+                "Voltando para a tela inicial."
             }
 
             else ->
@@ -421,7 +512,13 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             Intent.FLAG_ACTIVITY_NEW_TASK
         )
 
-        startActivity(intent)
+        if (
+            intent.resolveActivity(
+                packageManager
+            ) != null
+        ) {
+            startActivity(intent)
+        }
     }
 
     private fun openCamera() {
@@ -469,17 +566,17 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                     val hasFlash =
                         characteristics.get(
-                            android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE
+                            CameraCharacteristics.FLASH_INFO_AVAILABLE
                         ) == true
 
                     val lensFacing =
                         characteristics.get(
-                            android.hardware.camera2.CameraCharacteristics.LENS_FACING
+                            CameraCharacteristics.LENS_FACING
                         )
 
                     hasFlash &&
                             lensFacing ==
-                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+                            CameraCharacteristics.LENS_FACING_BACK
                 }
 
             if (cameraId != null) {
@@ -488,12 +585,166 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     cameraId,
                     enabled
                 )
-
-                flashLightOn = enabled
             }
 
         } catch (_: Exception) {
         }
+    }
+
+    private fun changeVolume(
+        direction: Int
+    ) {
+
+        val audioManager =
+            getSystemService(
+                AUDIO_SERVICE
+            ) as AudioManager
+
+        audioManager.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            direction,
+            AudioManager.FLAG_SHOW_UI
+        )
+    }
+
+    private fun muteVolume() {
+
+        val audioManager =
+            getSystemService(
+                AUDIO_SERVICE
+            ) as AudioManager
+
+        audioManager.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            AudioManager.ADJUST_MUTE,
+            AudioManager.FLAG_SHOW_UI
+        )
+    }
+
+    private fun searchGoogle(
+        query: String
+    ) {
+
+        val finalQuery =
+            if (query.isBlank()) {
+                "Google"
+            } else {
+                query
+            }
+
+        val intent =
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(
+                    "https://www.google.com/search?q=" +
+                            Uri.encode(finalQuery)
+                )
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        startActivity(intent)
+    }
+
+    private fun extractSearchText(
+        text: String
+    ): String {
+
+        return text
+            .replace(
+                "pesquise",
+                ""
+            )
+            .replace(
+                "pesquisar",
+                ""
+            )
+            .replace(
+                "procure no google",
+                ""
+            )
+            .replace(
+                "pesquisa no google",
+                ""
+            )
+            .trim()
+    }
+
+    private fun openPlayStore() {
+
+        val intent =
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(
+                    "market://details?id=com.android.vending"
+                )
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        try {
+
+            startActivity(intent)
+
+        } catch (_: Exception) {
+
+            val browserIntent =
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(
+                        "https://play.google.com/store"
+                    )
+                )
+
+            browserIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            startActivity(browserIntent)
+        }
+    }
+
+    private fun openAlarm() {
+
+        val intent =
+            Intent(
+                AlarmClock.ACTION_SHOW_ALARMS
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        if (
+            intent.resolveActivity(
+                packageManager
+            ) != null
+        ) {
+            startActivity(intent)
+        }
+    }
+
+    private fun goHome() {
+
+        val intent =
+            Intent(
+                Intent.ACTION_MAIN
+            ).apply {
+
+                addCategory(
+                    Intent.CATEGORY_HOME
+                )
+
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+            }
+
+        startActivity(intent)
     }
 
     private fun openSettings() {
