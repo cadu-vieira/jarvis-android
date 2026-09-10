@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -281,12 +283,84 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             "oi" in l ->
                 "Olá. Como posso ajudá-lo?"
 
-            "youtube" in l ->
+            "youtube" in l -> {
+
+                openApp(
+                    "com.google.android.youtube"
+                )
+
                 "Abrindo o YouTube."
+            }
+
+            "configurações" in l ||
+            "configuração" in l -> {
+
+                openSettings()
+
+                "Abrindo as configurações."
+            }
+
+            "navegador" in l ||
+            "internet" in l -> {
+
+                openBrowser()
+
+                "Abrindo o navegador."
+            }
 
             else ->
                 "Comando recebido: $text"
         }
+    }
+
+    private fun openApp(
+        packageName: String
+    ) {
+
+        val intent =
+            packageManager.getLaunchIntentForPackage(
+                packageName
+            )
+
+        if (intent != null) {
+
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            startActivity(intent)
+        }
+    }
+
+    private fun openSettings() {
+
+        val intent =
+            Intent(
+                Settings.ACTION_SETTINGS
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        startActivity(intent)
+    }
+
+    private fun openBrowser() {
+
+        val intent =
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(
+                    "https://www.google.com"
+                )
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        startActivity(intent)
     }
 
     private fun createChannel() {
