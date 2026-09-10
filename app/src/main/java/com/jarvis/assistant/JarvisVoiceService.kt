@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -44,6 +46,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         Handler(Looper.getMainLooper())
 
     private var commandListening = false
+
+    private var flashLightOn = false
 
     override fun onCreate() {
         super.onCreate()
@@ -282,7 +286,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
             "youtube" in l -> {
 
-                openApp("com.google.android.youtube")
+                openAppByName("youtube")
 
                 "Abrindo o YouTube."
             }
@@ -303,25 +307,25 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Abrindo o navegador."
             }
 
-            "whatsapp" in l -> {
-
-                openApp("com.whatsapp")
-
-                "Abrindo o WhatsApp."
-            }
-
             "spotify" in l -> {
 
-                openApp("com.spotify.music")
+                openAppByName("spotify")
 
                 "Abrindo o Spotify."
+            }
+
+            "whatsapp" in l -> {
+
+                openAppByName("whatsapp")
+
+                "Abrindo o WhatsApp."
             }
 
             "telefone" in l ||
             "ligações" in l ||
             "ligação" in l -> {
 
-                openApp("com.google.android.dialer")
+                openPhone()
 
                 "Abrindo o telefone."
             }
@@ -334,28 +338,90 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Abrindo a câmera."
             }
 
+            "ligue a lanterna" in l ||
+            "liga a lanterna" in l ||
+            "acenda a lanterna" in l ||
+            "acender a lanterna" in l -> {
+
+                setFlashlight(true)
+
+                "Ligando a lanterna."
+            }
+
+            "desligue a lanterna" in l ||
+            "desliga a lanterna" in l ||
+            "apague a lanterna" in l ||
+            "apagar a lanterna" in l -> {
+
+                setFlashlight(false)
+
+                "Desligando a lanterna."
+            }
+
             else ->
                 "Comando recebido: $text"
         }
     }
 
-    private fun openApp(
-        packageName: String
+    private fun openAppByName(
+        appName: String
     ) {
 
-        val intent =
-            packageManager.getLaunchIntentForPackage(
-                packageName
-            )
+        val packages =
+            when (appName) {
 
-        if (intent != null) {
+                "youtube" ->
+                    listOf(
+                        "com.google.android.youtube"
+                    )
 
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
-            )
+                "spotify" ->
+                    listOf(
+                        "com.spotify.music"
+                    )
 
-            startActivity(intent)
+                "whatsapp" ->
+                    listOf(
+                        "com.whatsapp",
+                        "com.whatsapp.w4b"
+                    )
+
+                else ->
+                    emptyList()
+            }
+
+        for (packageName in packages) {
+
+            val intent =
+                packageManager.getLaunchIntentForPackage(
+                    packageName
+                )
+
+            if (intent != null) {
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                startActivity(intent)
+
+                return
+            }
         }
+    }
+
+    private fun openPhone() {
+
+        val intent =
+            Intent(
+                Intent.ACTION_DIAL
+            )
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+        )
+
+        startActivity(intent)
     }
 
     private fun openCamera() {
@@ -369,13 +435,73 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             Intent.FLAG_ACTIVITY_NEW_TASK
         )
 
-        startActivity(intent)
+        if (
+            intent.resolveActivity(
+                packageManager
+            ) != null
+        ) {
+            startActivity(intent)
+        }
+    }
+
+    private fun setFlashlight(
+        enabled: Boolean
+    ) {
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
+
+        try {
+
+            val cameraManager =
+                getSystemService(
+                    CAMERA_SERVICE
+                ) as CameraManager
+
+            val cameraId =
+                cameraManager.cameraIdList.firstOrNull { id ->
+
+                    val characteristics =
+                        cameraManager.getCameraCharacteristics(
+                            id
+                        )
+
+                    val hasFlash =
+                        characteristics.get(
+                            android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE
+                        ) == true
+
+                    val lensFacing =
+                        characteristics.get(
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING
+                        )
+
+                    hasFlash &&
+                            lensFacing ==
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+                }
+
+            if (cameraId != null) {
+
+                cameraManager.setTorchMode(
+                    cameraId,
+                    enabled
+                )
+
+                flashLightOn = enabled
+            }
+
+        } catch (_: Exception) {
+        }
     }
 
     private fun openSettings() {
 
         val intent =
-            Intent(Settings.ACTION_SETTINGS)
+            Intent(
+                Settings.ACTION_SETTINGS
+            )
 
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
@@ -389,7 +515,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         val intent =
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse("https://www.google.com")
+                Uri.parse(
+                    "https://www.google.com"
+                )
             )
 
         intent.addFlags(
@@ -440,6 +568,10 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         recognizer?.destroy()
         recognizer = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            setFlashlight(false)
+        }
 
         if (::wakeWordEngine.isInitialized) {
             wakeWordEngine.release()
