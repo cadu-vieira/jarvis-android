@@ -24,19 +24,15 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
-
 import androidx.core.content.ContextCompat
-
 import com.rementia.openwakeword.lib.WakeWordEngine
 import com.rementia.openwakeword.lib.model.DetectionMode
 import com.rementia.openwakeword.lib.model.WakeWordModel
-
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -323,7 +319,30 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Abrindo o telefone."
             }
 
-            // LANterna ligada
+            // -------------------------------------------------
+            // LANterna DESLIGADA
+            // IMPORTANTE: fica ANTES dos comandos de ligar
+            // -------------------------------------------------
+
+            command.contains("desligue a lanterna") ||
+            command.contains("desliga a lanterna") ||
+            command.contains("desligar a lanterna") ||
+            command.contains("apague a lanterna") ||
+            command.contains("apagar a lanterna") ||
+            command.contains("desative a lanterna") ||
+            command.contains("desativar a lanterna") -> {
+
+                if (setFlashlight(false)) {
+                    "Lanterna desligada."
+                } else {
+                    "Não consegui acessar a lanterna."
+                }
+            }
+
+            // -------------------------------------------------
+            // LANterna LIGADA
+            // -------------------------------------------------
+
             command.contains("ligue a lanterna") ||
             command.contains("liga a lanterna") ||
             command.contains("acenda a lanterna") ||
@@ -332,22 +351,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                 if (setFlashlight(true)) {
                     "Lanterna ligada."
-                } else {
-                    "Não consegui acessar a lanterna."
-                }
-            }
-
-            // LANterna desligada
-            command.contains("desligue a lanterna") ||
-            command.contains("desliga a lanterna") ||
-            command.contains("apague a lanterna") ||
-            command.contains("apagar a lanterna") ||
-            command.contains("desligar a lanterna") ||
-            command.contains("desative a lanterna") ||
-            command.contains("desativar a lanterna") -> {
-
-                if (setFlashlight(false)) {
-                    "Lanterna desligada."
                 } else {
                     "Não consegui acessar a lanterna."
                 }
