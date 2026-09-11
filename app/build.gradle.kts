@@ -7,28 +7,35 @@ android {
     namespace = "com.jarvis.assistant"
     compileSdk = 35
 
-compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 
-kotlinOptions {
-    jvmTarget = "17"
-}
-   
-defaultConfig {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
         applicationId = "com.jarvis.assistant"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
     }
+
+    packaging {
+        jniLibs {
+            pickFirsts += "lib/**/libonnxruntime.so"
+        }
+    }
 }
+
 dependencies {
+    implementation(files("libs/sherpa-onnx-1.13.7.aar"))
+
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("xyz.rementia:openwakeword:0.1.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation(files("libs/sherpa-onnx-1.13.7.aar"))
 }
-    
