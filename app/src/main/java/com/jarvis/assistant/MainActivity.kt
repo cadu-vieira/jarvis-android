@@ -692,14 +692,8 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun speak(
-        text: String
-    ) {
-        val intent = Intent(this, JarvisVoiceService::class.java).apply {
-            action = JarvisVoiceService.ACTION_SPEAK
-            putExtra(JarvisVoiceService.EXTRA_TEXT, text)
-        }
-        ContextCompat.startForegroundService(this, intent)
+    private fun speak(text: String) {
+        JarvisKokoroTts.speak(this, text)
     }
 
     private fun listenOnce() {
@@ -817,7 +811,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
 
         recognizer?.destroy()
-
+        JarvisKokoroTts.release()
 
         super.onDestroy()
     }

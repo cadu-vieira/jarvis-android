@@ -9,9 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -33,12 +31,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.k2fsa.sherpa.onnx.GenerationConfig
-import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -48,8 +40,6 @@ class JarvisVoiceService : Service() {
     private var recognizer: SpeechRecognizer? = null
 
     private lateinit var wakeWordEngine: WakeWordEngine
-    private var kokoro: OfflineTts? = null
-    private var audioTrack: AudioTrack? = null
 
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate
@@ -58,169 +48,23 @@ class JarvisVoiceService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     private var commandListening = false
+    private var wakeWordRunning = false
+    private var lastWakeDetectionMs = 0L
 
     override fun onCreate() {
         super.onCreate()
 
         createNotificationChannel()
-        initializeKokoro()
         startJarvisForegroundService()
         setupWakeWord()
     }
 
     // ---------------------------------------------------------
-    // VOZ — KOKORO / BM_GEORGE
+    // VOZ - KOKORO / BM GEORGE
     // ---------------------------------------------------------
 
-    private fun initializeKokoro() {
-        try {
-            val espeakDir = java.io.File(filesDir, "espeak-ng-data")
-
-            if (!espeakDir.exists()) {
-                copyAssetDirectory("kokoro/espeak-ng-data", espeakDir)
-            }
-
-            kokoro = OfflineTts(
-                assetManager = assets,
-                config = OfflineTtsConfig(
-                    model = OfflineTtsModelConfig(
-                        kokoro = OfflineTtsKokoroModelConfig(
-                            model = "kokoro/model.int8.onnx",
-                            voices = "kokoro/voices.bin",
-                            tokens = "kokoro/tokens.txt",
-                            dataDir = espeakDir.absolutePath,
-                            lexicon = "kokoro/lexicon-gb-en.txt",
-                            lang = "eng"
-                        ),
-                        numThreads = 2,
-                        debug = false,
-                        provider = "cpu"
-                    ),
-                    maxNumSentences = 1,
-                    silenceScale = 0.2f
-                )
-            )
-
-            android.util.Log.i("JARVIS", "Kokoro George inicializado - SID 26")
-        } catch (e: Throwable) {
-            kokoro = null
-            android.util.Log.e("JARVIS", "Falha ao iniciar Kokoro", e)
-        }
-    }
-
-    private fun copyAssetDirectory(
-        assetPath: String,
-        destination: java.io.File
-    ) {
-        if (!destination.exists()) {
-            destination.mkdirs()
-        }
-
-        val children = assets.list(assetPath) ?: return
-
-        for (child in children) {
-            val source = "$assetPath/$child"
-            val target = java.io.File(destination, child)
-            val nested = assets.list(source)
-
-            if (nested != null && nested.isNotEmpty()) {
-                copyAssetDirectory(source, target)
-            } else {
-                assets.open(source).use { input ->
-                    target.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun speak(text: String) {
-        val engine = kokoro ?: run {
-            android.util.Log.e("JARVIS", "Kokoro indisponível. Não foi possível falar: $text")
-            return
-        }
-
-        scope.launch(Dispatchers.Default) {
-            try {
-                val audio = engine.generateWithConfig(
-                    text = text,
-                    config = GenerationConfig(
-                        sid = 26,
-                        speed = 0.92f,
-                        silenceScale = 0.2f
-                    )
-                )
-
-                if (audio.samples.isEmpty()) {
-                    android.util.Log.e("JARVIS", "Kokoro retornou áudio vazio.")
-                    return@launch
-                }
-
-                val pcm = ShortArray(audio.samples.size)
-                for (i in audio.samples.indices) {
-                    pcm[i] = (audio.samples[i] * 32767f)
-                        .toInt()
-                        .coerceIn(-32768, 32767)
-                        .toShort()
-                }
-
-                withContext(Dispatchers.Main) {
-                    try {
-                        audioTrack?.release()
-
-                        val minBuffer = AudioTrack.getMinBufferSize(
-                            audio.sampleRate,
-                            AudioFormat.CHANNEL_OUT_MONO,
-                            AudioFormat.ENCODING_PCM_16BIT
-                        )
-
-                        if (minBuffer <= 0) {
-                            android.util.Log.e("JARVIS", "Buffer de áudio inválido.")
-                            return@withContext
-                        }
-
-                        audioTrack = AudioTrack.Builder()
-                            .setAudioAttributes(
-                                android.media.AudioAttributes.Builder()
-                                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
-                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build()
-                            )
-                            .setAudioFormat(
-                                AudioFormat.Builder()
-                                    .setSampleRate(audio.sampleRate)
-                                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                    .build()
-                            )
-                            .setBufferSizeInBytes(maxOf(minBuffer, pcm.size * 2))
-                            .setTransferMode(AudioTrack.MODE_STATIC)
-                            .build()
-
-                        val written = audioTrack?.write(pcm, 0, pcm.size) ?: 0
-                        if (written > 0) {
-                            audioTrack?.play()
-                        } else {
-                            android.util.Log.e("JARVIS", "AudioTrack não escreveu o áudio.")
-                        }
-                    } catch (e: Throwable) {
-                        android.util.Log.e("JARVIS", "Falha ao reproduzir voz Kokoro", e)
-                        audioTrack?.release()
-                        audioTrack = null
-                    }
-                }
-            } catch (e: Throwable) {
-                android.util.Log.e("JARVIS", "Falha ao gerar voz Kokoro", e)
-            }
-        }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_SPEAK) {
-            intent.getStringExtra(EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let(::speak)
-        }
-        return START_STICKY
+    private fun speak(text: String, onComplete: (() -> Unit)? = null) {
+        JarvisKokoroTts.speak(this, text, onComplete)
     }
 
     // ---------------------------------------------------------
@@ -228,52 +72,86 @@ class JarvisVoiceService : Service() {
     // ---------------------------------------------------------
 
     private fun setupWakeWord() {
-
-        val models = listOf(
-            WakeWordModel(
-                name = "Hey Jarvis",
-                modelPath = "hey_jarvis_v0.1.onnx",
-                threshold = 0.08f
-            )
-        )
-
-        wakeWordEngine = WakeWordEngine(
-            context = this,
-            models = models,
-            detectionMode = DetectionMode.SINGLE_BEST,
-            detectionCooldownMs = 2000L
-        )
-
-        scope.launch {
-            wakeWordEngine.detections.collect {
-
-                if (commandListening) {
-                    return@collect
-                }
-
-                commandListening = true
-                wakeWordEngine.stop()
-
-                speak("Sim, senhor.")
-
-                handler.postDelayed(
-                    { startListeningForCommand() },
-                    1200L
+        try {
+            val models = listOf(
+                WakeWordModel(
+                    name = "Hey Jarvis",
+                    modelPath = "hey_jarvis_v0.1.onnx",
+                    threshold = 0.08f
                 )
-            }
-        }
+            )
 
-        wakeWordEngine.start()
+            wakeWordEngine = WakeWordEngine(
+                context = this,
+                models = models,
+                detectionMode = DetectionMode.SINGLE_BEST,
+                detectionCooldownMs = 2500L
+            )
+
+            scope.launch {
+                try {
+                    wakeWordEngine.detections.collect {
+                        val now = android.os.SystemClock.elapsedRealtime()
+
+                        // Ignore duplicate detections, including detections caused by
+                        // residual audio from JARVIS itself.
+                        if (commandListening || now - lastWakeDetectionMs < 4000L) {
+                            return@collect
+                        }
+
+                        lastWakeDetectionMs = now
+                        commandListening = true
+                        stopWakeWord()
+
+                        speak("Sim, senhor.") {
+                            handler.post {
+                                if (commandListening) {
+                                    startListeningForCommand()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Throwable) {
+                    android.util.Log.e("JARVIS", "Falha no fluxo do wake word", e)
+                }
+            }
+
+            startWakeWord()
+        } catch (e: Throwable) {
+            android.util.Log.e("JARVIS", "Falha ao configurar wake word", e)
+        }
+    }
+
+    private fun startWakeWord() {
+        if (!::wakeWordEngine.isInitialized || wakeWordRunning) return
+
+        try {
+            wakeWordEngine.start()
+            wakeWordRunning = true
+        } catch (e: Throwable) {
+            wakeWordRunning = false
+            android.util.Log.e("JARVIS", "Falha ao iniciar wake word", e)
+        }
+    }
+
+    private fun stopWakeWord() {
+        if (!::wakeWordEngine.isInitialized || !wakeWordRunning) return
+
+        try {
+            wakeWordEngine.stop()
+        } catch (e: Throwable) {
+            android.util.Log.e("JARVIS", "Falha ao parar wake word", e)
+        } finally {
+            wakeWordRunning = false
+        }
     }
 
     private fun restartWakeWord() {
         handler.postDelayed({
-
             if (!commandListening) {
-                wakeWordEngine.start()
+                startWakeWord()
             }
-
-        }, 1000L)
+        }, 1800L)
     }
 
     // ---------------------------------------------------------
@@ -281,93 +159,74 @@ class JarvisVoiceService : Service() {
     // ---------------------------------------------------------
 
     private fun startListeningForCommand() {
+        if (!commandListening) return
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             finishCommand()
             return
         }
 
-        recognizer?.destroy()
+        try {
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this)
 
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            recognizer?.setRecognitionListener(
+                object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
 
-        recognizer?.setRecognitionListener(
-            object : RecognitionListener {
-
-                override fun onReadyForSpeech(params: Bundle?) {}
-
-                override fun onBeginningOfSpeech() {}
-
-                override fun onRmsChanged(rmsdB: Float) {}
-
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {}
-
-                override fun onPartialResults(
-                    partialResults: Bundle?
-                ) {}
-
-                override fun onEvent(
-                    eventType: Int,
-                    params: Bundle?
-                ) {}
-
-                override fun onError(error: Int) {
-                    finishCommand()
-                }
-
-                override fun onResults(results: Bundle?) {
-
-                    val text = results
-                        ?.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION
-                        )
-                        ?.firstOrNull()
-
-                    if (!text.isNullOrBlank()) {
-                        speak(simpleCommand(text))
+                    override fun onError(error: Int) {
+                        finishCommand()
                     }
 
-                    finishCommand()
+                    override fun onResults(results: Bundle?) {
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+
+                        if (text.isNullOrBlank()) {
+                            finishCommand()
+                            return
+                        }
+
+                        // Keep the wake word disabled until JARVIS finishes speaking.
+                        speak(simpleCommand(text)) {
+                            finishCommand()
+                        }
+                    }
                 }
+            )
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
-        )
 
-        val intent = Intent(
-            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-        ).apply {
-
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                "pt-BR"
-            )
-
-            putExtra(
-                RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                false
-            )
+            recognizer?.startListening(intent)
+        } catch (e: Throwable) {
+            android.util.Log.e("JARVIS", "Falha ao iniciar reconhecimento", e)
+            finishCommand()
         }
-
-        recognizer?.startListening(intent)
     }
 
     private fun finishCommand() {
-
-        recognizer?.destroy()
+        try {
+            recognizer?.destroy()
+        } catch (_: Throwable) {
+        }
         recognizer = null
 
         commandListening = false
-
-        handler.postDelayed(
-            { restartWakeWord() },
-            1500L
-        )
+        restartWakeWord()
     }
 
     // ---------------------------------------------------------
@@ -948,32 +807,24 @@ class JarvisVoiceService : Service() {
     }
 
     override fun onDestroy() {
-
         handler.removeCallbacksAndMessages(null)
 
-        recognizer?.destroy()
+        try {
+            recognizer?.destroy()
+        } catch (_: Throwable) {
+        }
         recognizer = null
 
-        if (::wakeWordEngine.isInitialized) {
-            wakeWordEngine.release()
-        }
+        stopWakeWord()
 
         scope.cancel()
 
-        audioTrack?.release()
-        audioTrack = null
-
         try {
-            kokoro?.release()
+            JarvisKokoroTts.release()
         } catch (_: Throwable) {
         }
-        kokoro = null
 
         super.onDestroy()
-    }
-    companion object {
-        const val ACTION_SPEAK = "com.jarvis.assistant.ACTION_SPEAK"
-        const val EXTRA_TEXT = "com.jarvis.assistant.EXTRA_TEXT"
     }
 
 }
