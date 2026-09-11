@@ -18,7 +18,3 @@ O Android impõe restrições ao uso do microfone em segundo plano. Ativar o ser
 A próxima camada do projeto deve conectar o núcleo de IA por um backend seguro, adicionar memória persistente, ferramentas, confirmações e integração com recursos do sistema.
 
 NUNCA coloque uma chave de API diretamente no código ou no repositório.
-
-
-## Voz JARVIS
-A voz dinâmica usa Kokoro v1.0 INT8 com `bm_george` (SID 26) via Sherpa-ONNX. O GitHub Actions baixa o motor e o modelo durante o build.

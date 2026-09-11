@@ -1,0 +1,90 @@
+name: Build JARVIS APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Baixar Sherpa-ONNX estatico
+        run: |
+          mkdir -p app/libs
+          curl --fail --location --retry 3 \
+            --output app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-static-link-onnxruntime-1.13.7.aar
+          echo "220d7cb25ac6e57ec34082bc2551ebd7ec7d4d96cbfea520839e208f92347837  app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar" | sha256sum --check --strict
+          ! unzip -l app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar | grep -q 'libonnxruntime.so'
+
+      - name: Baixar modelo Kokoro George
+        run: |
+          mkdir -p /tmp/kokoro
+          cd /tmp/kokoro
+          curl --fail --location --retry 3 \
+            -o kokoro.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2
+          tar -xjf kokoro.tar.bz2
+          rm kokoro.tar.bz2
+
+      - name: Instalar arquivos Kokoro
+        run: |
+          rm -rf app/src/main/assets/kokoro
+          mkdir -p app/src/main/assets/kokoro
+          cp -a /tmp/kokoro/kokoro-int8-multi-lang-v1_0/. app/src/main/assets/kokoro/
+
+      - name: Verificar Kokoro
+        run: |
+          test -f app/src/main/assets/kokoro/model.int8.onnx
+          test -f app/src/main/assets/kokoro/voices.bin
+          test -f app/src/main/assets/kokoro/tokens.txt
+          test -f app/src/main/assets/kokoro/lexicon-gb-en.txt
+          test -d app/src/main/assets/kokoro/espeak-ng-data
+          echo "KOKORO OK"
+
+      - name: Verificar isolamento dos runtimes nativos
+        run: |
+          grep -q "class OfflineTts" app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt
+          grep -q "sherpa-onnx-static-link-onnxruntime" app/build.gradle.kts
+          ! grep -q "pickFirsts" app/build.gradle.kts
+
+      - name: Compilar APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Verificar APK
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'lib/arm64-v8a/libonnxruntime.so'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'assets/kokoro/model.int8.onnx'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'assets/kokoro/voices.bin'
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
