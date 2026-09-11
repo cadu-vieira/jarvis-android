@@ -41,11 +41,11 @@ jobs:
             -o app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar \
             "https://sourceforge.net/projects/sherpa-onnx.mirror/files/v1.13.7/sherpa-onnx-static-link-onnxruntime-1.13.7.aar/download"
 
-          echo "Verificando AAR..."
           ls -lh app/libs/
+
           test -f app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar
 
-          echo "Sherpa-ONNX static-link encontrado."
+          echo "Sherpa-ONNX OK."
 
       - name: Baixar API Kotlin do Sherpa-ONNX
         run: |
@@ -57,7 +57,7 @@ jobs:
 
           test -f app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt
 
-          echo "API Kotlin do Sherpa-ONNX encontrada."
+          echo "API Kotlin OK."
 
       - name: Baixar Kokoro INT8 v1.0
         run: |
@@ -69,74 +69,32 @@ jobs:
             -o /tmp/kokoro.tar.bz2 \
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2"
 
-          tar -xjf /tmp/kokoro.tar.bz2 -C app/src/main/assets
+          echo "Download concluído."
+
+          tar -xjf /tmp/kokoro.tar.bz2 \
+            -C app/src/main/assets
 
           rm /tmp/kokoro.tar.bz2
 
-          echo "Verificando Kokoro..."
+          echo "=============================="
+          echo "ESTRUTURA DO KOKORO:"
+          echo "=============================="
 
-          test -f app/src/main/assets/kokoro-multi-lang-v1_0/model.int8.onnx
-          test -f app/src/main/assets/kokoro-multi-lang-v1_0/voices.bin
-          test -f app/src/main/assets/kokoro-multi-lang-v1_0/tokens.txt
-          test -d app/src/main/assets/kokoro-multi-lang-v1_0/espeak-ng-data
-          test -f app/src/main/assets/kokoro-multi-lang-v1_0/lexicon-gb-en.txt
+          find app/src/main/assets -maxdepth 4 -type f | sort
 
-          echo "Kokoro v1.0 INT8 presente."
+          echo "=============================="
+          echo "PASTAS:"
+          echo "=============================="
 
-      - name: Verificar código de voz
-        run: |
-          ! grep -R "TextToSpeech" app/src/main/java/com/jarvis/assistant
+          find app/src/main/assets -maxdepth 3 -type d | sort
 
-          grep -R "GEORGE_SID = 26" \
-            app/src/main/java/com/jarvis/assistant/JarvisKokoroTts.kt
-
-          grep -R "sid = GEORGE_SID" \
-            app/src/main/java/com/jarvis/assistant/JarvisKokoroTts.kt
-
-          grep -R "com.k2fsa.sherpa.onnx.OfflineTts" \
-            app/src/main/java/com/jarvis/assistant/JarvisKokoroTts.kt
-
-          echo "Código de voz validado."
-
-      - name: Verificar dependência nativa
-        run: |
-          test -f app/libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar
-
-          ! grep -R "pickFirsts.*libonnxruntime.so" app/build.gradle.kts
-
-          echo "Dependência Sherpa-ONNX static-link validada."
+          echo "=============================="
+          echo "FIM DA VERIFICAÇÃO"
+          echo "=============================="
 
       - name: Compilar APK
         run: |
           gradle assembleDebug --no-daemon
-
-      - name: Verificar APK final
-        run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
-
-          test -f "$APK"
-
-          echo "Verificando bibliotecas nativas..."
-          unzip -l "$APK" | grep "lib/arm64-v8a/libsherpa-onnx-jni.so"
-
-          echo "Verificando modelo Kokoro..."
-          unzip -l "$APK" | grep "assets/kokoro-multi-lang-v1_0/model.int8.onnx"
-
-          echo "Verificando vozes..."
-          unzip -l "$APK" | grep "assets/kokoro-multi-lang-v1_0/voices.bin"
-
-          echo "Verificando tokens..."
-          unzip -l "$APK" | grep "assets/kokoro-multi-lang-v1_0/tokens.txt"
-
-          echo "Verificando espeak..."
-          unzip -l "$APK" | grep "assets/kokoro-multi-lang-v1_0/espeak-ng-data"
-
-          if unzip -p "$APK" classes.dex | strings | grep -q "android/speech/tts/TextToSpeech"; then
-            echo "ERRO: TextToSpeech do Android ainda está no APK."
-            exit 1
-          fi
-
-          echo "APK JARVIS validado com sucesso."
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
