@@ -28,7 +28,12 @@ dependencies {
     implementation(files("libs/sherpa-onnx-static-link-onnxruntime-1.13.7.aar"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("xyz.rementia:openwakeword:0.1.5")
+    implementation("xyz.rementia:openwakeword:0.1.5") {
+    exclude(
+        group = "com.microsoft.onnxruntime",
+        module = "onnxruntime-android"
+    )
+}
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
     
