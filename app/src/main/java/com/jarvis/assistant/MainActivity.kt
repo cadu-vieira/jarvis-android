@@ -63,38 +63,74 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.backgroundVoice).setOnClickListener {
-
             requestRequiredPermissions()
+            startVoiceServiceIfPermitted()
+        }
 
+        requestRequiredPermissions()
+
+        // Inicia a escuta automática assim que o microfone já estiver autorizado.
+        startVoiceServiceIfPermitted()
+
+        addLine(
+            "JARVIS",
+            "Sistema inicializado. Diga \"Hey Jarvis\" para ativar."
+        )
+    }
+
+    private fun startVoiceServiceIfPermitted() {
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            status.text = "Permissão do microfone necessária."
+            return
+        }
+
+        try {
+            val intent = Intent(
+                this,
+                JarvisVoiceService::class.java
+            )
+
+            ContextCompat.startForegroundService(
+                this,
+                intent
+            )
+
+            status.text = "JARVIS ouvindo: diga \"Hey Jarvis\"."
+        } catch (e: Exception) {
+            status.text = "Não foi possível iniciar a escuta."
+            e.printStackTrace()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (requestCode == microphonePermissionCode) {
             if (
                 ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-
-                val intent =
-                    Intent(
-                        this,
-                        JarvisVoiceService::class.java
-                    )
-
-                ContextCompat.startForegroundService(
-                    this,
-                    intent
-                )
-
+                startVoiceServiceIfPermitted()
+            } else {
                 status.text =
-                    "Escuta em segundo plano ativada."
+                    "Permita o microfone para usar \"Hey Jarvis\"."
             }
         }
-
-        requestRequiredPermissions()
-
-        addLine(
-            "JARVIS",
-            "Sistema inicializado. Aguardando comando."
-        )
     }
 
     private fun requestRequiredPermissions() {

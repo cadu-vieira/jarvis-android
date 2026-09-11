@@ -1,24 +1,17 @@
-# JARVIS Android — base completa
+# JARVIS Android — Etapa 3 final
 
-Projeto Android leve, sem Android Studio obrigatório no computador do usuário.
+A escuta por "Hey Jarvis" é iniciada automaticamente depois que o microfone é autorizado.
 
-## O que já existe
-- Interface HUD escura.
-- Entrada por texto.
-- Reconhecimento de voz em pt-BR.
-- Voz de resposta (TTS).
-- Serviço de microfone em primeiro plano.
-- Comandos locais básicos.
-- Estrutura preparada para IA e ferramentas.
-- Build automático por GitHub Actions.
+Fluxo esperado:
+1. Abrir o JARVIS.
+2. Permitir o microfone.
+3. O serviço de voz é iniciado automaticamente.
+4. Dizer "Hey Jarvis".
+5. JARVIS responde "Sim, senhor.".
+6. Dizer o comando.
+7. JARVIS executa e fala a resposta.
+8. Depois da resposta, o Wake Word volta a ficar ativo.
 
-## Importante
-O Android impõe restrições ao uso do microfone em segundo plano. Ativar o serviço enquanto o app está visível permite que ele continue ativo depois que a tela for bloqueada, mas um app comum não pode simplesmente ligar o microfone a qualquer momento quando está totalmente em segundo plano.
+O botão "ATIVAR VOZ EM SEGUNDO PLANO" continua disponível para iniciar a escuta manualmente.
 
-A próxima camada do projeto deve conectar o núcleo de IA por um backend seguro, adicionar memória persistente, ferramentas, confirmações e integração com recursos do sistema.
-
-NUNCA coloque uma chave de API diretamente no código ou no repositório.
-
-
-## Voz JARVIS
-A voz dinâmica usa Kokoro v1.0 INT8 com `bm_george` (SID 26) via Sherpa-ONNX. O GitHub Actions baixa o motor e o modelo durante o build.
+O GitHub Actions baixa o Sherpa-ONNX static-link, a API Kotlin e o Kokoro INT8 oficial durante o build.
