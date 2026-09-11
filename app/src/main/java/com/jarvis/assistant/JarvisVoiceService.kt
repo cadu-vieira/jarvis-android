@@ -74,6 +74,15 @@ class JarvisVoiceService : Service() {
 
     private fun initializeKokoro() {
         try {
+            val espeakDir = java.io.File(filesDir, "espeak-ng-data")
+
+            if (!espeakDir.exists()) {
+                copyAssetDirectory(
+                    "kokoro/espeak-ng-data",
+                    espeakDir
+                )
+            }
+
             kokoro = OfflineTts(
                 assetManager = assets,
                 config = OfflineTtsConfig(
@@ -82,18 +91,56 @@ class JarvisVoiceService : Service() {
                             model = "kokoro/model.int8.onnx",
                             voices = "kokoro/voices.bin",
                             tokens = "kokoro/tokens.txt",
-                            dataDir = "kokoro/espeak-ng-data",
-                            lang = "pt-br"
+                            dataDir = espeakDir.absolutePath,
+                            lexicon = "kokoro/lexicon-gb-en.txt",
+                            lang = "eng"
                         ),
-                        numThreads = 4,
+                        numThreads = 2,
                         debug = false,
                         provider = "cpu"
                     )
                 )
             )
+
+            android.util.Log.i(
+                "JARVIS",
+                "Kokoro George inicializado. SID=26"
+            )
         } catch (e: Exception) {
             kokoro = null
-            android.util.Log.e("JARVIS", "Falha ao iniciar Kokoro", e)
+            android.util.Log.e(
+                "JARVIS",
+                "Falha ao iniciar Kokoro",
+                e
+            )
+        }
+    }
+
+    private fun copyAssetDirectory(
+        assetPath: String,
+        destination: java.io.File
+    ) {
+        if (!destination.exists()) {
+            destination.mkdirs()
+        }
+
+        val children = assets.list(assetPath) ?: return
+
+        for (child in children) {
+            val source = "$assetPath/$child"
+            val target = java.io.File(destination, child)
+
+            val nested = assets.list(source)
+
+            if (nested != null && nested.isNotEmpty()) {
+                copyAssetDirectory(source, target)
+            } else {
+                assets.open(source).use { input ->
+                    target.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
         }
     }
 
@@ -888,13 +935,11 @@ class JarvisVoiceService : Service() {
 
         scope.cancel()
 
-        if (::tts.isInitialized) {
-            tts.stop()
-            audioTrack?.release()
+        audioTrack?.release()
         audioTrack = null
+
         kokoro?.release()
         kokoro = null
-        }
 
         super.onDestroy()
     }
