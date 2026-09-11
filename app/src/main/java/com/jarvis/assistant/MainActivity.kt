@@ -13,7 +13,6 @@ import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -26,9 +25,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+class MainActivity : AppCompatActivity() {
 
-    private lateinit var tts: TextToSpeech
     private lateinit var conversation: TextView
     private lateinit var status: TextView
     private lateinit var input: EditText
@@ -46,8 +44,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         conversation = findViewById(R.id.conversation)
         status = findViewById(R.id.status)
         input = findViewById(R.id.input)
-
-        tts = TextToSpeech(this, this)
 
         findViewById<Button>(R.id.send).setOnClickListener {
 
@@ -699,16 +695,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun speak(
         text: String
     ) {
-
-        if (::tts.isInitialized) {
-
-            tts.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "jarvis"
-            )
+        val intent = Intent(this, JarvisVoiceService::class.java).apply {
+            action = JarvisVoiceService.ACTION_SPEAK
+            putExtra(JarvisVoiceService.EXTRA_TEXT, text)
         }
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun listenOnce() {
@@ -823,25 +814,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         recognizer?.startListening(intent)
     }
 
-    override fun onInit(
-        statusCode: Int
-    ) {
-
-        if (
-            statusCode ==
-            TextToSpeech.SUCCESS
-        ) {
-
-            tts.language =
-                Locale("pt", "BR")
-        }
-    }
-
     override fun onDestroy() {
 
         recognizer?.destroy()
 
-        tts.shutdown()
 
         super.onDestroy()
     }

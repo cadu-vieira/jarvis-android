@@ -9,7 +9,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,8 +24,6 @@ import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
 import com.rementia.openwakeword.lib.WakeWordEngine
 import com.rementia.openwakeword.lib.model.DetectionMode
@@ -33,16 +33,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.k2fsa.sherpa.onnx.GenerationConfig
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
+class JarvisVoiceService : Service() {
 
     private var recognizer: SpeechRecognizer? = null
 
-    private lateinit var tts: TextToSpeech
     private lateinit var wakeWordEngine: WakeWordEngine
+    private var kokoro: OfflineTts? = null
+    private var audioTrack: AudioTrack? = null
 
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate
@@ -55,62 +62,93 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
 
-        tts = TextToSpeech(this, this)
-
         createNotificationChannel()
+        initializeKokoro()
         startJarvisForegroundService()
         setupWakeWord()
     }
 
     // ---------------------------------------------------------
-    // VOZ
+    // VOZ — KOKORO / BM_GEORGE
     // ---------------------------------------------------------
 
-    override fun onInit(status: Int) {
-        if (status != TextToSpeech.SUCCESS) return
-
-        tts.language = Locale("pt", "BR")
-        tts.setSpeechRate(0.88f)
-        tts.setPitch(0.72f)
-
-        selectJarvisVoice()
-    }
-
-    private fun selectJarvisVoice() {
-        val voices = tts.voices ?: return
-
-        val maleVoice = voices
-            .filter { voice ->
-                voice.locale.language == "pt" &&
-                !voice.isNetworkConnectionRequired
-            }
-            .sortedBy { voice ->
-                when {
-                    voice.name.contains("male", true) -> 0
-                    voice.name.contains("masculine", true) -> 0
-                    voice.name.contains("homem", true) -> 0
-                    else -> 1
-                }
-            }
-            .firstOrNull()
-
-        if (maleVoice != null) {
-            try {
-                tts.voice = maleVoice
-            } catch (_: Exception) {
-            }
+    private fun initializeKokoro() {
+        try {
+            kokoro = OfflineTts(
+                assetManager = assets,
+                config = OfflineTtsConfig(
+                    model = OfflineTtsModelConfig(
+                        kokoro = OfflineTtsKokoroModelConfig(
+                            model = "kokoro/model.int8.onnx",
+                            voices = "kokoro/voices.bin",
+                            tokens = "kokoro/tokens.txt",
+                            dataDir = "kokoro/espeak-ng-data",
+                            lang = "pt-br"
+                        ),
+                        numThreads = 4,
+                        debug = false,
+                        provider = "cpu"
+                    )
+                )
+            )
+        } catch (e: Exception) {
+            kokoro = null
+            android.util.Log.e("JARVIS", "Falha ao iniciar Kokoro", e)
         }
     }
 
     private fun speak(text: String) {
-        if (!::tts.isInitialized) return
+        val engine = kokoro ?: return
 
-        tts.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "jarvis"
-        )
+        scope.launch(Dispatchers.Default) {
+            try {
+                val audio = engine.generateWithConfig(
+                    text = text,
+                    config = GenerationConfig(
+                        sid = 26,
+                        speed = 0.92f,
+                        silenceScale = 0.2f
+                    )
+                )
+
+                val pcm = ShortArray(audio.samples.size)
+                for (i in audio.samples.indices) {
+                    val value = (audio.samples[i] * 32767f).toInt()
+                    pcm[i] = value.coerceIn(-32768, 32767).toShort()
+                }
+
+                withContext(Dispatchers.Main) {
+                    audioTrack?.release()
+                    val minBuffer = AudioTrack.getMinBufferSize(
+                        audio.sampleRate,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    )
+                    audioTrack = AudioTrack.Builder()
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setSampleRate(audio.sampleRate)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .build()
+                        )
+                        .setBufferSizeInBytes(maxOf(minBuffer, pcm.size * 2))
+                        .setTransferMode(AudioTrack.MODE_STATIC)
+                        .build()
+                    audioTrack?.write(pcm, 0, pcm.size)
+                    audioTrack?.play()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("JARVIS", "Falha ao gerar voz Kokoro", e)
+            }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SPEAK) {
+            intent.getStringExtra(EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let(::speak)
+        }
+        return START_STICKY
     }
 
     // ---------------------------------------------------------
@@ -852,9 +890,17 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         if (::tts.isInitialized) {
             tts.stop()
-            tts.shutdown()
+            audioTrack?.release()
+        audioTrack = null
+        kokoro?.release()
+        kokoro = null
         }
 
         super.onDestroy()
     }
+    companion object {
+        const val ACTION_SPEAK = "com.jarvis.assistant.ACTION_SPEAK"
+        const val EXTRA_TEXT = "com.jarvis.assistant.EXTRA_TEXT"
+    }
+
 }

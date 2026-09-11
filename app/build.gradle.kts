@@ -29,5 +29,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("xyz.rementia:openwakeword:0.1.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation(files("libs/sherpa-onnx-1.13.7.aar"))
 }
     
