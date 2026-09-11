@@ -73,11 +73,17 @@ class JarvisVoiceService : Service() {
 
     private fun setupWakeWord() {
         try {
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "Configurando Wake Word: Hey Jarvis"
+            )
+
             val models = listOf(
                 WakeWordModel(
                     name = "Hey Jarvis",
                     modelPath = "hey_jarvis_v0.1.onnx",
-                    threshold = 0.08f
+                    // Mais sensível que a versão anterior.
+                    threshold = 0.03f
                 )
             )
 
@@ -88,61 +94,160 @@ class JarvisVoiceService : Service() {
                 detectionCooldownMs = 2500L
             )
 
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "Wake Word Engine criado. threshold=0.03"
+            )
+
             scope.launch {
                 try {
-                    wakeWordEngine.detections.collect {
+                    android.util.Log.i(
+                        "JARVIS_WAKE",
+                        "Iniciando coleta de detections..."
+                    )
+
+                    wakeWordEngine.detections.collect { detection ->
                         val now = android.os.SystemClock.elapsedRealtime()
 
-                        // Ignore duplicate detections, including detections caused by
-                        // residual audio from JARVIS itself.
-                        if (commandListening || now - lastWakeDetectionMs < 4000L) {
+                        android.util.Log.i(
+                            "JARVIS_WAKE",
+                            "DETECÇÃO RECEBIDA: $detection"
+                        )
+
+                        if (commandListening) {
+                            android.util.Log.i(
+                                "JARVIS_WAKE",
+                                "Detecção ignorada: já está ouvindo comando."
+                            )
+                            return@collect
+                        }
+
+                        if (now - lastWakeDetectionMs < 4000L) {
+                            android.util.Log.i(
+                                "JARVIS_WAKE",
+                                "Detecção duplicada ignorada."
+                            )
                             return@collect
                         }
 
                         lastWakeDetectionMs = now
                         commandListening = true
+
+                        android.util.Log.i(
+                            "JARVIS_WAKE",
+                            "HEY JARVIS CONFIRMADO!"
+                        )
+
                         stopWakeWord()
 
                         speak("Sim, senhor.") {
                             handler.post {
                                 if (commandListening) {
+                                    android.util.Log.i(
+                                        "JARVIS_WAKE",
+                                        "George terminou. Iniciando reconhecimento do comando."
+                                    )
                                     startListeningForCommand()
                                 }
                             }
                         }
                     }
                 } catch (e: Throwable) {
-                    android.util.Log.e("JARVIS", "Falha no fluxo do wake word", e)
+                    android.util.Log.e(
+                        "JARVIS_WAKE",
+                        "ERRO no fluxo de detections do Wake Word",
+                        e
+                    )
+
+                    handler.post {
+                        if (!commandListening) {
+                            restartWakeWord()
+                        }
+                    }
                 }
             }
 
             startWakeWord()
+
         } catch (e: Throwable) {
-            android.util.Log.e("JARVIS", "Falha ao configurar wake word", e)
+            android.util.Log.e(
+                "JARVIS_WAKE",
+                "ERRO ao configurar Wake Word",
+                e
+            )
         }
     }
 
     private fun startWakeWord() {
-        if (!::wakeWordEngine.isInitialized || wakeWordRunning) return
+        if (!::wakeWordEngine.isInitialized) {
+            android.util.Log.e(
+                "JARVIS_WAKE",
+                "Não é possível iniciar: WakeWordEngine não inicializado."
+            )
+            return
+        }
+
+        if (wakeWordRunning) {
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "Wake Word já está rodando."
+            )
+            return
+        }
 
         try {
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "Chamando wakeWordEngine.start()..."
+            )
+
             wakeWordEngine.start()
             wakeWordRunning = true
+
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "WAKE WORD ATIVO."
+            )
+
         } catch (e: Throwable) {
             wakeWordRunning = false
-            android.util.Log.e("JARVIS", "Falha ao iniciar wake word", e)
+
+            android.util.Log.e(
+                "JARVIS_WAKE",
+                "FALHA AO INICIAR WAKE WORD",
+                e
+            )
         }
     }
 
     private fun stopWakeWord() {
-        if (!::wakeWordEngine.isInitialized || !wakeWordRunning) return
+        if (!::wakeWordEngine.isInitialized) return
+
+        if (!wakeWordRunning) {
+            return
+        }
 
         try {
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "Parando Wake Word..."
+            )
+
             wakeWordEngine.stop()
+
         } catch (e: Throwable) {
-            android.util.Log.e("JARVIS", "Falha ao parar wake word", e)
+            android.util.Log.e(
+                "JARVIS_WAKE",
+                "Falha ao parar wake word",
+                e
+            )
         } finally {
             wakeWordRunning = false
+
+            android.util.Log.i(
+                "JARVIS_WAKE",
+                "WAKE WORD PARADO."
+            )
         }
     }
 
