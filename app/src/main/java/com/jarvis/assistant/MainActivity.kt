@@ -63,47 +63,47 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.backgroundVoice).setOnClickListener {
-            requestRequiredPermissions()
-            startVoiceServiceIfPermitted()
+            startBackgroundVoice()
         }
-
-        requestRequiredPermissions()
-
-        // Inicia a escuta automática assim que o microfone já estiver autorizado.
-        startVoiceServiceIfPermitted()
 
         addLine(
             "JARVIS",
-            "Sistema inicializado. Diga \"Hey Jarvis\" para ativar."
+            "Sistema inicializado. Aguardando \"Hey Jarvis\"."
         )
+
+        requestRequiredPermissions()
+
+        // O Wake Word deve ficar ativo sem precisar apertar nenhum botão.
+        // Se o microfone já estiver autorizado, iniciamos o serviço imediatamente.
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startBackgroundVoice()
+        }
     }
 
-    private fun startVoiceServiceIfPermitted() {
-        if (
-            ContextCompat.checkSelfPermission(
+    private fun startBackgroundVoice() {
+        if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            status.text = "Permissão do microfone necessária."
+            requestRequiredPermissions()
+            status.text = "Permita o microfone para ativar o Hey Jarvis."
             return
         }
 
         try {
-            val intent = Intent(
-                this,
-                JarvisVoiceService::class.java
-            )
-
             ContextCompat.startForegroundService(
                 this,
-                intent
+                Intent(this, JarvisVoiceService::class.java)
             )
-
-            status.text = "JARVIS ouvindo: diga \"Hey Jarvis\"."
-        } catch (e: Exception) {
-            status.text = "Não foi possível iniciar a escuta."
-            e.printStackTrace()
+            status.text = "Hey Jarvis ativo."
+        } catch (error: Throwable) {
+            status.text = "Não foi possível ativar a voz."
+            android.util.Log.e("JARVIS", "Falha ao iniciar serviço de voz", error)
         }
     }
 
@@ -112,24 +112,18 @@ class MainActivity : AppCompatActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        super.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        if (requestCode == microphonePermissionCode) {
-            if (
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                startVoiceServiceIfPermitted()
-            } else {
-                status.text =
-                    "Permita o microfone para usar \"Hey Jarvis\"."
-            }
+        if (requestCode != microphonePermissionCode) return
+
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startBackgroundVoice()
+        } else {
+            status.text = "O microfone é necessário para o Hey Jarvis."
         }
     }
 
