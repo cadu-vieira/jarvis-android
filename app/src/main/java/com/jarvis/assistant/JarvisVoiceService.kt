@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -23,14 +24,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
-import com.rementia.openwakeword.lib.WakeWordEngine
-import com.rementia.openwakeword.lib.model.DetectionMode
-import com.rementia.openwakeword.lib.model.WakeWordModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,17 +32,11 @@ class JarvisVoiceService : Service() {
 
     private var recognizer: SpeechRecognizer? = null
 
-    private lateinit var wakeWordEngine: WakeWordEngine
-
-    private val scope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Main.immediate
-    )
-
     private val handler = Handler(Looper.getMainLooper())
 
     private var commandListening = false
     private var wakeWordRunning = false
-    private var lastWakeDetectionMs = 0L
+    private var destroyed = false
 
     override fun onCreate() {
         super.onCreate()
@@ -71,193 +58,221 @@ class JarvisVoiceService : Service() {
     // WAKE WORD
     // ---------------------------------------------------------
 
+    /*
+     * Nesta versão o reconhecimento do "Hey Jarvis" usa o
+     * SpeechRecognizer do próprio Android em sessões curtas e
+     * reiniciadas automaticamente.
+     *
+     * Isso é proposital: no aparelho de teste o detector ONNX de
+     * wake word não estava gerando detecções, enquanto o reconhecimento
+     * de fala do Android já conseguia entender "Hey Jarvis".
+     *
+     * Também permite: "Hey Jarvis, abra o YouTube" em uma única fala.
+     */
+
     private fun setupWakeWord() {
-        try {
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "Configurando Wake Word: Hey Jarvis"
-            )
+        android.util.Log.i(
+            "JARVIS_WAKE",
+            "Configurando wake word pelo reconhecimento de fala do Android"
+        )
 
-            val models = listOf(
-                WakeWordModel(
-                    name = "Hey Jarvis",
-                    modelPath = "hey_jarvis_v0.1.onnx",
-                    // Mais sensível que a versão anterior.
-                    threshold = 0.03f
-                )
-            )
-
-            wakeWordEngine = WakeWordEngine(
-                context = this,
-                models = models,
-                detectionMode = DetectionMode.SINGLE_BEST,
-                detectionCooldownMs = 2500L
-            )
-
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "Wake Word Engine criado. threshold=0.03"
-            )
-
-            scope.launch {
-                try {
-                    android.util.Log.i(
-                        "JARVIS_WAKE",
-                        "Iniciando coleta de detections..."
-                    )
-
-                    wakeWordEngine.detections.collect { detection ->
-                        val now = android.os.SystemClock.elapsedRealtime()
-
-                        android.util.Log.i(
-                            "JARVIS_WAKE",
-                            "DETECÇÃO RECEBIDA: $detection"
-                        )
-
-                        if (commandListening) {
-                            android.util.Log.i(
-                                "JARVIS_WAKE",
-                                "Detecção ignorada: já está ouvindo comando."
-                            )
-                            return@collect
-                        }
-
-                        if (now - lastWakeDetectionMs < 4000L) {
-                            android.util.Log.i(
-                                "JARVIS_WAKE",
-                                "Detecção duplicada ignorada."
-                            )
-                            return@collect
-                        }
-
-                        lastWakeDetectionMs = now
-                        commandListening = true
-
-                        android.util.Log.i(
-                            "JARVIS_WAKE",
-                            "HEY JARVIS CONFIRMADO!"
-                        )
-
-                        stopWakeWord()
-
-                        speak("Sim, senhor.") {
-                            handler.post {
-                                if (commandListening) {
-                                    android.util.Log.i(
-                                        "JARVIS_WAKE",
-                                        "George terminou. Iniciando reconhecimento do comando."
-                                    )
-                                    startListeningForCommand()
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Throwable) {
-                    android.util.Log.e(
-                        "JARVIS_WAKE",
-                        "ERRO no fluxo de detections do Wake Word",
-                        e
-                    )
-
-                    handler.post {
-                        if (!commandListening) {
-                            restartWakeWord()
-                        }
-                    }
-                }
-            }
-
-            startWakeWord()
-
-        } catch (e: Throwable) {
-            android.util.Log.e(
-                "JARVIS_WAKE",
-                "ERRO ao configurar Wake Word",
-                e
-            )
-        }
+        startWakeWord()
     }
 
     private fun startWakeWord() {
-        if (!::wakeWordEngine.isInitialized) {
+        if (commandListening || wakeWordRunning) return
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             android.util.Log.e(
                 "JARVIS_WAKE",
-                "Não é possível iniciar: WakeWordEngine não inicializado."
+                "SpeechRecognizer não está disponível neste aparelho."
             )
             return
         }
 
-        if (wakeWordRunning) {
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "Wake Word já está rodando."
-            )
-            return
-        }
+        wakeWordRunning = true
 
-        try {
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "Chamando wakeWordEngine.start()..."
-            )
-
-            wakeWordEngine.start()
-            wakeWordRunning = true
-
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "WAKE WORD ATIVO."
-            )
-
-        } catch (e: Throwable) {
-            wakeWordRunning = false
-
-            android.util.Log.e(
-                "JARVIS_WAKE",
-                "FALHA AO INICIAR WAKE WORD",
-                e
-            )
+        handler.post {
+            startWakeRecognition()
         }
     }
 
-    private fun stopWakeWord() {
-        if (!::wakeWordEngine.isInitialized) return
-
-        if (!wakeWordRunning) {
-            return
-        }
+    private fun startWakeRecognition() {
+        if (!wakeWordRunning || commandListening) return
 
         try {
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "Parando Wake Word..."
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+
+            recognizer?.setRecognitionListener(
+                object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        android.util.Log.d("JARVIS_WAKE", "Aguardando Hey Jarvis...")
+                    }
+
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+
+                    override fun onError(error: Int) {
+                        android.util.Log.d(
+                            "JARVIS_WAKE",
+                            "Wake recognition error=$error; reiniciando"
+                        )
+                        recognizer?.destroy()
+                        recognizer = null
+                        if (wakeWordRunning && !commandListening) {
+                            handler.postDelayed({
+                                startWakeRecognition()
+                            }, 500L)
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.trim()
+                            .orEmpty()
+
+                        android.util.Log.i(
+                            "JARVIS_WAKE",
+                            "Reconhecimento de wake: $text"
+                        )
+
+                        recognizer?.destroy()
+                        recognizer = null
+
+                        if (!wakeWordRunning || commandListening) return
+
+                        val command = extractWakeCommand(text)
+
+                        if (command != null) {
+                            wakeWordRunning = false
+                            commandListening = true
+
+                            if (command.isBlank()) {
+                                speak("Sim, senhor.") {
+                                    handler.post {
+                                        if (commandListening) {
+                                            startListeningForCommand()
+                                        }
+                                    }
+                                }
+                            } else {
+                                // "Hey Jarvis, abra o YouTube"
+                                // já executa o comando na mesma fala.
+                                val response = simpleCommand(command)
+                                speak(response) {
+                                    finishCommand()
+                                }
+                            }
+                        } else {
+                            handler.postDelayed({
+                                startWakeRecognition()
+                            }, 250L)
+                        }
+                    }
+                }
             )
 
-            wakeWordEngine.stop()
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    700L
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                    300L
+                )
+            }
+
+            recognizer?.startListening(intent)
 
         } catch (e: Throwable) {
             android.util.Log.e(
                 "JARVIS_WAKE",
-                "Falha ao parar wake word",
+                "Falha ao iniciar reconhecimento do wake word",
                 e
             )
-        } finally {
-            wakeWordRunning = false
 
-            android.util.Log.i(
-                "JARVIS_WAKE",
-                "WAKE WORD PARADO."
-            )
+            try {
+                recognizer?.destroy()
+            } catch (_: Throwable) {
+            }
+            recognizer = null
+
+            if (wakeWordRunning && !commandListening) {
+                handler.postDelayed({
+                    startWakeRecognition()
+                }, 1000L)
+            }
         }
+    }
+
+    private fun extractWakeCommand(text: String): String? {
+        val normalized = text
+            .lowercase(Locale("pt", "BR"))
+            .replace(Regex("[.,!?;:]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val wakePrefixes = listOf(
+            "hey jarvis",
+            "ei jarvis",
+            "e jarvis"
+        )
+
+        for (prefix in wakePrefixes) {
+            if (normalized == prefix) return ""
+
+            if (normalized.startsWith("$prefix ")) {
+                return normalized.removePrefix(prefix).trim()
+            }
+        }
+
+        return null
+    }
+
+    private fun stopWakeWord() {
+        wakeWordRunning = false
+
+        try {
+            recognizer?.stopListening()
+        } catch (_: Throwable) {
+        }
+
+        try {
+            recognizer?.cancel()
+        } catch (_: Throwable) {
+        }
+
+        try {
+            recognizer?.destroy()
+        } catch (_: Throwable) {
+        }
+
+        recognizer = null
     }
 
     private fun restartWakeWord() {
         handler.postDelayed({
-            if (!commandListening) {
+            if (!commandListening && !isDestroyedFlag()) {
                 startWakeWord()
             }
-        }, 1800L)
+        }, 500L)
     }
+
+    private fun isDestroyedFlag(): Boolean = destroyed
 
     // ---------------------------------------------------------
     // RECONHECIMENTO DE COMANDO
@@ -899,10 +914,15 @@ class JarvisVoiceService : Service() {
                 .setOngoing(true)
                 .build()
 
-        startForeground(
-            42,
-            notification
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                42,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(42, notification)
+        }
     }
 
     override fun onBind(
@@ -912,6 +932,7 @@ class JarvisVoiceService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         handler.removeCallbacksAndMessages(null)
 
         try {
@@ -922,7 +943,6 @@ class JarvisVoiceService : Service() {
 
         stopWakeWord()
 
-        scope.cancel()
 
         try {
             JarvisKokoroTts.release()
